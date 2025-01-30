@@ -7,11 +7,14 @@ import FormType from "../../constants/FormType";
 import CheckboxGroup from "./CheckboxGroup";
 import { RangeInput } from "./RangeInput";
 
-function FormItem({  options,checked, children,parent, error, ...props }, ref) {
+function FormItem(
+  { options, checked, children, parent, error, ...props },
+  ref,
+) {
   const renderItem = () => {
     switch (props.type) {
       case FormType.CHECKBOX:
-        return <Checkbox {...props} ref={ref} checked={checked}/>;
+        return <Checkbox {...props} ref={ref} checked={checked} />;
       case FormType.RANGE:
         return <RangeInput options={options} {...props} ref={ref} />;
       case FormType.CHECKBOX_GROUP:
