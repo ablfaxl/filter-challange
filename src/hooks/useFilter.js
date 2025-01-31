@@ -15,19 +15,30 @@ function parseUrl(urlSearchParams) {
   if (query) {
     query.split(AND_SIGN).forEach((param) => {
       const [key, value] = param.split(EQUAL_SIGN);
-      if (value?.includes(ARRAY_SEPARATOR)) {
-        filterState[key] = value.split(ARRAY_SEPARATOR);
+      if (value === undefined) return; // Skip invalid params
+
+      const processValue = (val) => {
+        // Convert numeric values to numbers
+        const num = Number(val);
+        return isNaN(num) ? val : num;
+      };
+
+      if (value.includes(ARRAY_SEPARATOR)) {
+        filterState[key] = value.split(ARRAY_SEPARATOR).map(processValue);
       } else {
-        filterState[key] = value;
+        filterState[key] = processValue(value);
       }
     });
   }
-  return filterState;
+  return filterState || {};
 }
 
 function stringifyUrl(data) {
   return Object.entries(data)
-    .filter(([_, value]) => value !== "" && value !== undefined)
+    .filter(([_, value]) => {
+      if (Array.isArray(value)) return value.length > 0;
+      return value !== "" && value !== undefined && value !== false;
+    })
     .map(([key, value]) => {
       if (Array.isArray(value)) {
         return `${key}${EQUAL_SIGN}${value.join(ARRAY_SEPARATOR)}`;
@@ -48,40 +59,48 @@ function useFilter(formData) {
     setFilterState(parseUrl(searchParams));
   }, [location.search, searchParams]);
 
-  function updateUrl(newState) {
-    const newQuery = stringifyUrl(newState);
-    navigate(newQuery);
-  }
+  useEffect(() => {
+    setFilterState(parseUrl(searchParams));
+  }, [location.search, searchParams]);
 
   function onChange(e, name, type) {
     let value = e.target.value;
+
     if (type === "checkbox-group") {
-      value = e.target.checked
-        ? [...(filterState[name] || []), value]
-        : (filterState[name] || []).filter((v) => v !== value);
+      const parsedValue = isNaN(value) ? value : Number(value);
+      const currentValues = new Set(filterState[name] || []);
+
+      if (e.target.checked) {
+        currentValues.add(parsedValue);
+      } else {
+        currentValues.delete(parsedValue);
+      }
+
+      value = [...currentValues];
     } else if (type === "checkbox") {
-      value = e.target.checked ? true : "";
+      value = e.target.checked;
     }
 
-    const newState = { ...filterState, [name]: value };
-    setFilterState(newState);
-    updateUrl(newState);
+    setFilterState((prevState) => ({
+      ...prevState,
+      [name]: value || [], // مقدار پیش‌فرض آرایه خالی
+    }));
+
+    stringifyUrl({ ...filterState, [name]: value });
   }
 
+  // Rest of the code remains unchanged
   function onClear(name) {
     const newState = { ...filterState };
-    console.log(newState[name]);
     delete newState[name];
 
-    const parentField = formData.find((field) =>
-      field.children?.includes(name),
-    );
-    if (parentField) {
-      parentField.children.forEach((child) => delete newState[child]);
+    const currentField = formData.find((field) => field.name === name);
+    if (currentField?.children) {
+      currentField.children.forEach((child) => delete newState[child]);
     }
 
     setFilterState(newState);
-    updateUrl(newState);
+    stringifyUrl(newState);
   }
 
   function onClearAll() {
