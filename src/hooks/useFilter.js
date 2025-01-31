@@ -1,114 +1,82 @@
-import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
-import { useEffect, useState } from "react";
+import { useMemo } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 
-const AND_SIGN = "+";
-const EQUAL_SIGN = "~";
-const ARRAY_SEPARATOR = "--";
+export const EQUAL = "~";
+export const AND = "+";
+export const ARRAY_SEPARATOR = "--";
 
-function parseUrl(urlSearchParams) {
-  const filterState = {};
-  const query = urlSearchParams
-    .toString()
-    .replace(/&/g, AND_SIGN)
-    .replace(/=/g, EQUAL_SIGN);
+const parseUrl = (url) => {
+  const queryString = url.split("?")[1];
+  if (!queryString) return {};
 
-  if (query) {
-    query.split(AND_SIGN).forEach((param) => {
-      const [key, value] = param.split(EQUAL_SIGN);
-      if (value === undefined) return; // Skip invalid params
+  return queryString.split(AND).reduce((acc, pair) => {
+    const [key, value] = pair.split(EQUAL);
+    acc[key] =
+        key === "seller-type" || key === "brand"
+            ? value.split(ARRAY_SEPARATOR).map(canBeParsedAsInt)
+            : canBeParsedAsInt(value);
 
-      const processValue = (val) => {
-        // Convert numeric values to numbers
-        const num = Number(val);
-        return isNaN(num) ? val : num;
-      };
+    return acc;
+  }, {});
+};
 
-      if (value.includes(ARRAY_SEPARATOR)) {
-        filterState[key] = value.split(ARRAY_SEPARATOR).map(processValue);
-      } else {
-        filterState[key] = processValue(value);
-      }
-    });
-  }
-  return filterState || {};
-}
+const stringifyUrl = (data) => {
+  return (
+      "?" +
+      Object.entries(data)
+          .map(([key, value]) => {
+            console.log(value);
+            return Array.isArray(value)
+                ? `${key}${EQUAL}${value.join(ARRAY_SEPARATOR)}`
+                : `${key}${EQUAL}${value}`;
+          })
+          .join(AND)
+  );
+};
 
-function stringifyUrl(data) {
-  return Object.entries(data)
-    .filter(([_, value]) => {
-      if (Array.isArray(value)) return value.length > 0;
-      return value !== "" && value !== undefined && value !== false;
-    })
-    .map(([key, value]) => {
-      if (Array.isArray(value)) {
-        return `${key}${EQUAL_SIGN}${value.join(ARRAY_SEPARATOR)}`;
-      }
-      return `${key}${EQUAL_SIGN}${value}`;
-    })
-    .join(AND_SIGN);
-}
+const canBeParsedAsInt = (value) => {
+  const num = Number(value);
+  return Number.isInteger(num) && !isNaN(num) ? num : value;
+};
 
-function useFilter(formData) {
+const useFilter = () => {
   const location = useLocation();
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
 
-  const [filterState, setFilterState] = useState(() => parseUrl(searchParams));
+  const filterState = useMemo(
+      () => parseUrl(location.search),
+      [location.search]
+  );
 
-  useEffect(() => {
-    setFilterState(parseUrl(searchParams));
-  }, [location.search, searchParams]);
+  const setFilterState = (newState) => {
+    navigate(stringifyUrl(newState));
+    console.log(newState);
+  };
 
-  useEffect(() => {
-    setFilterState(parseUrl(searchParams));
-  }, [location.search, searchParams]);
-
-  function onChange(e, name, type) {
-    let value = e.target.value;
+  const onChange = (e, name, type) => {
+    const value = canBeParsedAsInt(e.target.value);
+    const newFilterState = { ...filterState };
 
     if (type === "checkbox-group") {
-      const parsedValue = isNaN(value) ? value : Number(value);
-      const currentValues = new Set(filterState[name] || []);
-
-      if (e.target.checked) {
-        currentValues.add(parsedValue);
-      } else {
-        currentValues.delete(parsedValue);
-      }
-
-      value = [...currentValues];
-    } else if (type === "checkbox") {
-      value = e.target.checked;
+      const checkbox = filterState[name];
+      newFilterState[name] =
+          checkbox && !checkbox.includes(value) ? [...checkbox, value] : [value];
+    } else {
+      newFilterState[name] = value;
     }
 
-    setFilterState((prevState) => ({
-      ...prevState,
-      [name]: value || [], // مقدار پیش‌فرض آرایه خالی
-    }));
+    setFilterState(newFilterState);
+  };
 
-    stringifyUrl({ ...filterState, [name]: value });
-  }
+  const onClear = (name) => {
+    const newFilterState = { ...filterState };
+    delete newFilterState[name];
+    setFilterState(newFilterState);
+  };
 
-  // Rest of the code remains unchanged
-  function onClear(name) {
-    const newState = { ...filterState };
-    delete newState[name];
-
-    const currentField = formData.find((field) => field.name === name);
-    if (currentField?.children) {
-      currentField.children.forEach((child) => delete newState[child]);
-    }
-
-    setFilterState(newState);
-    stringifyUrl(newState);
-  }
-
-  function onClearAll() {
-    setFilterState({});
-    navigate("/", { replace: true });
-  }
+  const onClearAll = () => setFilterState({});
 
   return { filterState, setFilterState, onChange, onClear, onClearAll };
-}
+};
 
 export default useFilter;
